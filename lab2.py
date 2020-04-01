@@ -31,7 +31,7 @@ class HttpRequestInfo(object):
         self.client_address_info = client_info
         self.requested_host = requested_host ## the requested website
         self.requested_port = requested_port ## port of the website
-        self.requested_path = requested_path ## /
+        self.requested_path = requested_path
         # Headers will be represented as a list of lists
         # for example ["Host", "www.google.com"]
         # if you get a header as:
@@ -72,6 +72,8 @@ class HttpRequestInfo(object):
         print(f"Method:", self.method)
         print(f"Host:", self.requested_host)
         print(f"Port:", self.requested_port)
+        print(f"Path:", self.requested_path)
+
         #stringified = [": ".join([k, v]) for (k, v) in self.headers]
         #print("Headers:\n", "\n".join(stringified))
 
@@ -199,17 +201,28 @@ def parse_http_request(source_addr, http_raw_data):
     print(data_list)
     first_line=data_list[0].split(" ")
     method=first_line[0]
-    host=first_line[1].rsplit(':', 1)
-    requested_host=host[0]
-    port = host[1].find(":")
-    if port==-1:
-        requested_port=80
+    flag=0
+    requested_path = ""
+    if(first_line[1][0]=="/"):
+        print("relative")
     else:
-        requested_port=first_line[1][port+1:].split("/")[0]
-    requested_path=first_line[2]
-    second_line=data_list[1]
-    print(first_line)
-    print(second_line)
+        host=first_line[1].rsplit(':', 1)
+        print(host)
+        if host[0] == "http" or host[0] == "https":
+            requested_host = first_line[1]
+            host = first_line[1]
+            flag = 1
+        else:
+            requested_host=host[0]
+
+        if len(host) > 1 and flag == 0:
+            port_path = host[1].rsplit('/', 1)
+            requested_port = port_path[0]
+            if len(port_path) > 1:
+                requested_path = port_path[1]
+        else:
+            requested_port = 80
+        second_line = data_list[1]
     print("*" * 50)
     print("[parse_http_request] Implement me!")
     print("*" * 50)
