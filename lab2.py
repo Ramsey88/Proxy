@@ -1,7 +1,7 @@
 import sys
 import os
 import enum
-import socket
+
 
 class HttpRequestInfo(object):
     """
@@ -29,9 +29,9 @@ class HttpRequestInfo(object):
                  headers: list):
         self.method = method
         self.client_address_info = client_info
-        self.requested_host = requested_host ## the requested website
-        self.requested_port = requested_port ## port of the website
-        self.requested_path = requested_path ## /
+        self.requested_host = requested_host
+        self.requested_port = requested_port
+        self.requested_path = requested_path
         # Headers will be represented as a list of lists
         # for example ["Host", "www.google.com"]
         # if you get a header as:
@@ -118,8 +118,8 @@ def entry_point(proxy_port_number):
     but feel free to modify the code
     inside it.
     """
-    setup_sockets(proxy_port_number)
 
+    setup_sockets(proxy_port_number)
     print("*" * 50)
     print("[entry_point] Implement me!")
     print("*" * 50)
@@ -127,25 +127,38 @@ def entry_point(proxy_port_number):
 
 
 def setup_sockets(proxy_port_number):
+    """
+    Socket logic MUST NOT be written in the any
+    class. Classes know nothing about the sockets.
+    But feel free to add your own classes/functions.
+    Feel free to delete this function.
+    """
     print("Starting HTTP proxy on port:", proxy_port_number)
+<<<<<<< HEAD:lab2.py
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # intializing a TPC socket
     s.bind(('127.0.0.1',proxy_port_number))
     s.listen(15)
     conn, addr = s.accept()
     print(conn)
-    data1=""
+    raw_data=""
     count=0
     while 1:
         data = conn.recv(1024).decode()
-        data1 += data
-        print(data)
         if data=="\r\n":
             count+=1
             if count >=2:
                 break
+        raw_data += data
+        print(data)
         #conn.sendall(data)
-
+    parse_http_request(addr,raw_data)
     conn.close()
+=======
+
+    # when calling socket.listen() pass a number
+    # that's larger than 10 to avoid rejecting
+    # connections automatically.
+>>>>>>> parent of 98c5d6e... socket setup:4939_4603_lab2.py
     print("*" * 50)
     print("[setup_sockets] Implement me!")
     print("*" * 50)
@@ -191,6 +204,13 @@ def parse_http_request(source_addr, http_raw_data):
     This function parses a "valid" HTTP request into an HttpRequestInfo
     object.
     """
+    data_list=http_raw_data.split("\r\n")
+    print(data_list)
+    first_line=data_list[0]
+    second_line=data_list[1]
+
+    print(first_line)
+    print(second_line)
     print("*" * 50)
     print("[parse_http_request] Implement me!")
     print("*" * 50)
