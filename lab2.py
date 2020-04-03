@@ -32,6 +32,7 @@ class HttpRequestInfo(object):
         self.requested_host = requested_host ## the requested website
         self.requested_port = requested_port ## port of the website
         self.requested_path = requested_path
+
         # Headers will be represented as a list of lists
         # for example ["Host", "www.google.com"]
         # if you get a header as:
@@ -39,7 +40,6 @@ class HttpRequestInfo(object):
         # convert it to ["Host", "www.google.com"] note that the
         # port is removed (because it goes into the request_port variable)
         self.headers = headers
-        self.display()
     def to_http_string(self):
         """
         Convert the HTTP request/response
@@ -62,7 +62,6 @@ class HttpRequestInfo(object):
                 String += head
                 break;
         String += "\r\n"
-
         print("*" * 50)
         print("[to_http_string] Implement me!")
         print("*" * 50)
@@ -92,11 +91,10 @@ class HttpErrorResponse(object):
     def __init__(self, code, message):
         self.code = code
         self.message = message
-        self.display()
     def to_http_string(self):
         """ Same as above """
         string = self.message+" "+"("+str(self.code)+")"
-        return self.to_byte_array(string)
+        return string
 
     def to_byte_array(self, http_string):
         """
@@ -128,7 +126,6 @@ def entry_point(proxy_port_number):
     inside it.
     """
     setup_sockets(proxy_port_number)
-
     print("*" * 50)
     print("[entry_point] Implement me!")
     print("*" * 50)
@@ -139,22 +136,40 @@ def setup_sockets(proxy_port_number):
     print("Starting HTTP proxy on port:", proxy_port_number)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # intializing a TPC socket
     s.bind(('127.0.0.1',proxy_port_number))
-    s.listen(15)
-    conn, addr = s.accept()
-    print(conn)
-    raw_data=""
-    count=0
+    hash_table = {}
     while 1:
-        data = conn.recv(1024).decode()
-        if data=="\r\n":
-            count+=1
-            if count >=2:
-                break
-        raw_data += data
-        #conn.sendall(data)
-    print(raw_data)
-    http_request_pipeline(addr,raw_data)
-    conn.close()
+        s.listen(4096)
+        conn, addr = s.accept()
+        raw_data=""
+        count=0
+        while 1:
+            data = conn.recv(1024).decode()
+            if data=="\r\n":
+                if count ==1:
+                    break
+                count += 1
+            else:
+                count=0
+            raw_data += data
+        request_info = http_request_pipeline(addr,raw_data)
+
+        if type(request_info) == HttpErrorResponse:
+            conn.send(request_info.to_byte_array(request_info.to_http_string()))
+            conn.close()
+        else:
+         String = request_info.to_http_string()
+         print(String)
+         if String in hash_table:
+             conn.send(hash_table.get(String))
+             conn.close()
+         else:
+             recieve = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+             recieve.connect((request_info.requested_host, int(request_info.requested_port)))
+             recieve.send(request_info.to_byte_array(String))
+             data = recieve.recv(4096)
+             hash_table[String]=data
+             conn.send(data)
+             conn.close()
     print("*" * 50)
     print("[setup_sockets] Implement me!")
     print("*" * 50)
@@ -183,15 +198,15 @@ def http_request_pipeline(source_addr, http_raw_data):
     Please don't remove this function, but feel
     free to change its content
     """
-    # Parse HTTP request
     validity = check_http_request_validity(http_raw_data)
     if validity == HttpRequestState.GOOD:
        httprequestinfo=parse_http_request(source_addr,http_raw_data)
-       sanitize_http_request(httprequestinfo)
+       sanitize_http_request(httprequestinfo,http_raw_data)
+       return httprequestinfo
     elif validity == HttpRequestState.INVALID_INPUT:
-        HttpErrorResponse(400,"Bad Request")
+        return HttpErrorResponse(400,"Bad Request")
     elif validity == HttpRequestState.NOT_SUPPORTED:
-        HttpErrorResponse(501,"Not Implemented")
+        return HttpErrorResponse(501,"Not Implemented")
 
     # Return error if needed, then:
     # parse_http_request()
@@ -200,8 +215,6 @@ def http_request_pipeline(source_addr, http_raw_data):
     print("*" * 50)
     print("[http_request_pipeline] Implement me!")
     print("*" * 50)
-    return None
-
 
 def parse_http_request(source_addr, http_raw_data):
     """
@@ -212,17 +225,24 @@ def parse_http_request(source_addr, http_raw_data):
     data_list=http_raw_data.split("\r\n",1)
     first_line=data_list[0].split(" ")
     method=first_line[0]
-    flag=0
+    port_flag=0
+    path_flag=0
+    http_flag=0
     headers=list()
     requested_path = "/"
     requested_port=80
     if(first_line[1][0]=="/"):
         second_line = data_list[1]
         hosts=second_line.split("\r\n")
-        hosts.pop(-1)
-        hosts.pop(-1)
+        while 1:
+            if hosts[-1] == "":
+                hosts.pop(-1)
+                if len(hosts) == 0:
+                    break
+            else:
+                break;
         requested_path = first_line[1]
-        header = hosts[0].replace(" ", "").split(":")
+        header = hosts[0].replace(" ", "").replace("http://","").split(":")
         if (len(header)>2):
             requested_port=header[2]
             header.pop(-1)
@@ -230,42 +250,72 @@ def parse_http_request(source_addr, http_raw_data):
         header_url = header[1].split(":")
         requested_host = header_url[0]
         if (len(hosts)>1.0):
-            for x in range(1, int(len(hosts))):
-                header_url = hosts[x].split(":")
-                requested_host = header_url[0].strip()
-                if len(header_url) >1 :
-                    requested_port = header_url[1]
-                headers.append(header)
+            for x in range(0, int(len(hosts))):
+                if x==0:
+                    pass
+                else:
+                    header_url = hosts[x].replace(" ", "").split(":")
+                    headers.append(header_url)
     else:
-        host=first_line[1].rsplit(':', 1)
-        if host[0] == "http" or host[0] == "https":
-            x=host[0].count("/")
+        http=first_line [1].split("://")
+        if len(http)>1:
+            http_flag=1
+            http.pop(0)
+            http = http[0]
+        else:
+            http = http[0]
+        #www.google.com:8080/things
+        port_flag=http.find(":")
+        path_flag=http.find("/")
+        print(port_flag,path_flag)
+        if port_flag != -1 and path_flag == -1:
+            requested_host = http.split(":")[0]
+            requested_port = http.split(":")[1]
+        elif port_flag == -1 and path_flag != -1:
+            requested_host = http.split("/",1)[0]
+            requested_path = "/"+http.split("/",1)[1]
+        elif port_flag == -1 and path_flag == -1:
+            requested_host = http
+        elif port_flag != -1 and path_flag !=-1:
+            requested_host = http.split(":")[0]
+            requested_port = http.split(":")[1].split("/")[0]
+            requested_path = "/"+http.split("/",1)[1]
+        #if http_flag == 1:
+         #   requested_host= "http://"+requested_host
+
+        """
+        host=first_line[1].rsplit('/', 1)
+        #80 http://www.google.com GET http://www.google.com:8080/things HTTP/1.0
+        if len(host)>1:
+            x=first_line[1].count("/")
+            y=first_line[1].count(":")
             if x>2:
                 host=host[0]+"://"+first_line[1].split("/","3")[2]
+                flag = 1 #there is a path
             else:
                 requested_host = first_line[1]
                 host = first_line[1]
-            flag = 1
         else:
             x=host[0].count("/")
             if x>0:
+                print("HIIIIIIIIIIIIS",host)
                 requested_host=first_line[1].split("/",1)[0]
             else:
                 requested_host=host[0]
-
         if len(host) > 1 and flag == 0:
             port_path = host[1].split('/', 1)
-            requested_port = port_path[0]
+            requested_port = 80
             if len(port_path) > 1:
                 requested_path = "/"+port_path[1]
         else:
             requested_port = 80
             if(flag==1):
+                #http://www.google.com
                 requested_path="/"+first_line[1].split("/",3)[3]
             else:
                 if len(first_line[1].split("/",1))>1:
                     requested_path="/"+first_line[1].split("/",1)[1]
-
+"""
     print("*" * 50)
     print("[parse_http_request] Implement me!")
     print("*" * 50)
@@ -281,10 +331,10 @@ def check_http_request_validity(http_raw_data) -> HttpRequestState:
     One of values in HttpRequestState
     """
     data_list = http_raw_data.split("\r\n",1)
+
    # print(data_list)
     first_line = data_list[0].split(" ")
     method = first_line[0]
-    path_flag = 0
     headers=list()
     if len(first_line) == 3:
         if first_line[1] == "/":
@@ -296,19 +346,23 @@ def check_http_request_validity(http_raw_data) -> HttpRequestState:
                     if first_line[2] == "HTTP/1.0":
                         hosts = second_line.split("\r\n")
                         for x in range(0, len(hosts)-1):
-                            header = hosts[x].split(":")
+                            header = hosts[x].split(":",1)
                             if len(header) == 2:
                                 headers.append(header)
                                 return HttpRequestState.GOOD
                             else:
+
                                 return HttpRequestState.INVALID_INPUT
                     else:
+
                         return HttpRequestState.INVALID_INPUT
                   elif (method == "HEAD" or method == "POST" or method == "PUT"):
                       return HttpRequestState.NOT_SUPPORTED
                   else:
+
                       return HttpRequestState.INVALID_INPUT
               else:
+
                   return HttpRequestState.INVALID_INPUT
 
           else:
@@ -317,39 +371,45 @@ def check_http_request_validity(http_raw_data) -> HttpRequestState:
         else:
             if first_line[0] != "" and first_line[1] != "" and first_line[2] != "":
                 if first_line[2] == "HTTP/1.0":
-                        http_valid = first_line[1].split(":")
-                        if http_valid[0] == "http":
-                            slash_count = http_valid[1].count("/")
-                            if slash_count > 2:
-                                path_flag = 1
-                            else:
-                                return HttpRequestState.INVALID_INPUT
-                        elif first_line[1].count("/") > 0:
-                                path_flag = 1
-                        else:
-                            return HttpRequestState.INVALID_INPUT
-                        if path_flag == 1:
+                            second_line = data_list[1]
+                            hosts = second_line.split("\r\n")
+                            while 1:
+                                if hosts[-1] == "":
+                                    hosts.pop(-1)
+                                    if len(hosts) ==0:
+                                        break
+                                else:
+                                    break;
+                            if(len(hosts)>=1):
+                                for x in range(0, len(hosts)):
+                                    header = hosts[x].split(":")
+                                    if len(header) == 2:
+                                        headers.append(header)
+                                    else:
+                                        return HttpRequestState.INVALID_INPUT
                             if (method == "GET"):
                                 return HttpRequestState.GOOD
                             elif (method == "HEAD" or method == "POST" or method == "PUT"):
                                 return HttpRequestState.NOT_SUPPORTED
                             else:
+
                                 return HttpRequestState.INVALID_INPUT
                 else:
+
                     return HttpRequestState.INVALID_INPUT
 
             else:
+
                 return HttpRequestState.INVALID_INPUT
 
     else:
         return HttpRequestState.INVALID_INPUT
-
     print("*" * 50)
     print("[check_http_request_validity] Implement me!")
     print("*" * 50)
 
 
-def sanitize_http_request(request_info: HttpRequestInfo):
+def sanitize_http_request(request_info: HttpRequestInfo,http_raw_data):
     """
     Puts an HTTP request on the sanitized (standard) form
     by modifying the input request_info object.
@@ -357,7 +417,23 @@ def sanitize_http_request(request_info: HttpRequestInfo):
     returns:
     nothing, but modifies the input object
     """
-    request_info.to_http_string()
+    data_list = http_raw_data.split("\r\n", 1)
+    first_line = data_list[0].split(" ")
+    if first_line[1][0] != "/" :
+        request_info.headers.append(["Host",request_info.requested_host])
+        second_line = data_list[1]
+        hosts = second_line.split("\r\n")
+        while 1:
+            if hosts[-1] == "":
+                hosts.pop(-1)
+                if len(hosts) == 0:
+                    break
+            else:
+                break;
+        if (int(len(hosts)) >= 1):
+            for x in range(0, int(len(hosts))):
+                header_url = hosts[x].replace(" ", "").split(":")
+                request_info.headers.append(header_url)
     print("*" * 50)
     print("[sanitize_http_request] Implement me!")
     print("*" * 50)

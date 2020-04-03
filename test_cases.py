@@ -188,7 +188,7 @@ def simple_http_validation_test_cases():
     #######################################
     #######################################
     case = "Parse an invalid HTTP request (bad header [no colon, no value])"
-    req_str = "HEAD www.google.com HTTP/1.0\r\nAccept \r\n"
+    req_str = "HEAD www.google.com HTTP/1.0\r\nAccept \r\n\r\n"
 
     actual_value = check_http_request_validity(req_str)
     correct_value = HttpRequestState.INVALID_INPUT
