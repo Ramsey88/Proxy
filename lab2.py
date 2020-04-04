@@ -2,6 +2,7 @@ import sys
 import os
 import enum
 import socket
+import _thread
 
 class HttpRequestInfo(object):
     """
@@ -140,49 +141,57 @@ def setup_sockets(proxy_port_number):
     while 1:
         s.listen(4096)
         conn, addr = s.accept()
-        raw_data=""
-        count=0
-        while 1:
-            data = conn.recv(1024).decode()
-            if data=="\r\n":
-                if count ==1:
-                    break
-                count += 1
-            else:
-                count=0
-            raw_data += data
-        request_info = http_request_pipeline(addr,raw_data)
-
-        if type(request_info) == HttpErrorResponse:
-            conn.send(request_info.to_byte_array(request_info.to_http_string()))
-            conn.close()
-        else:
-         String = request_info.to_http_string()
-         print(String)
-         if String in hash_table:
-             conn.send(hash_table.get(String))
-             conn.close()
-         else:
-             recieve = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-             recieve.connect((request_info.requested_host, int(request_info.requested_port)))
-             recieve.send(request_info.to_byte_array(String))
-             data = recieve.recv(4096)
-             hash_table[String]=data
-             conn.send(data)
-             conn.close()
+        _thread.start_new_thread(socket_logic,(conn, addr, hash_table),)
     print("*" * 50)
     print("[setup_sockets] Implement me!")
     print("*" * 50)
-    return None
 
 
-def do_socket_logic():
+
+def socket_logic(conn,addr,hash_table):
     """
     Example function for some helper logic, in case you
     want to be tidy and avoid stuffing the main function.
     Feel free to delete this function.
     """
+    raw_data = ""
+    count = 0
+    while 1:
+        data = conn.recv(1024).decode()
+        if data == "\r\n":
+            if count == 1:
+                break
+            count += 1
+        else:
+            count = 0
+        raw_data += data
+    request_info = http_request_pipeline(addr, raw_data)
+    if type(request_info) == HttpErrorResponse:
+        conn.send(request_info.to_byte_array(request_info.to_http_string()))
+        conn.close()
+    else:
+        String = request_info.to_http_string()
+        print(String)
+        if String in hash_table:
+            conn.send(hash_table.get(String))
+            print("FASTEEEEEEEER")
+            conn.close()
+        else:
+            recieve = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                recieve.connect((request_info.requested_host, int(request_info.requested_port)))
+                recieve.send(request_info.to_byte_array(String))
+                data = recieve.recv(4096)
+                hash_table[String] = data
+                conn.send(data)
+                conn.close()
+            except:
+                conn.send(bytes("could not resolve "+request_info.requested_host+": Name or service not known", "UTF-8"))
+                conn.close()
+
+
     pass
+
 
 
 def http_request_pipeline(source_addr, http_raw_data):
@@ -282,40 +291,6 @@ def parse_http_request(source_addr, http_raw_data):
             requested_path = "/"+http.split("/",1)[1]
         #if http_flag == 1:
          #   requested_host= "http://"+requested_host
-
-        """
-        host=first_line[1].rsplit('/', 1)
-        #80 http://www.google.com GET http://www.google.com:8080/things HTTP/1.0
-        if len(host)>1:
-            x=first_line[1].count("/")
-            y=first_line[1].count(":")
-            if x>2:
-                host=host[0]+"://"+first_line[1].split("/","3")[2]
-                flag = 1 #there is a path
-            else:
-                requested_host = first_line[1]
-                host = first_line[1]
-        else:
-            x=host[0].count("/")
-            if x>0:
-                print("HIIIIIIIIIIIIS",host)
-                requested_host=first_line[1].split("/",1)[0]
-            else:
-                requested_host=host[0]
-        if len(host) > 1 and flag == 0:
-            port_path = host[1].split('/', 1)
-            requested_port = 80
-            if len(port_path) > 1:
-                requested_path = "/"+port_path[1]
-        else:
-            requested_port = 80
-            if(flag==1):
-                #http://www.google.com
-                requested_path="/"+first_line[1].split("/",3)[3]
-            else:
-                if len(first_line[1].split("/",1))>1:
-                    requested_path="/"+first_line[1].split("/",1)[1]
-"""
     print("*" * 50)
     print("[parse_http_request] Implement me!")
     print("*" * 50)
